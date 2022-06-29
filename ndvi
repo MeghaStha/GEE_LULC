@@ -1,0 +1,104 @@
+/**
+ * Function to mask clouds based on the pixel_qa band of Landsat SR data.
+ * @param {ee.Image} image Input Landsat SR image
+ * @return {ee.Image} Cloudmasked Landsat image
+ */
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+
+var dataset = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR')
+                  .filterDate('2011-01-01', '2013-02-13')
+                 .map(cloudMaskL457);
+
+/**
+ * Function to mask clouds based on the pixel_qa band of Landsat 8 SR data.
+ * @param {ee.Image} image input Landsat 8 SR image
+ * @return {ee.Image} cloudmasked Landsat 8 image
+ */
+function maskL8sr(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+                 .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+var dataset1 = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+                  .filterDate('2013-02-14', '2021-12-31')
+                  .map(maskL8sr);
+
+// Define a Geometry object.
+/**var geometry = ee.Geometry({
+  'type': 'Polygon',
+  'coordinates':
+    [[[-88.888556, 26.227759],
+      [-81.888556, 26.075548],
+      [-81.732188, 26.075548],
+      [-81.732188, 26.227759],
+      [-81.888556, 26.227759]]]
+});**/
+
+var tri1 = ee.FeatureCollection('users/MeghaShrestha/trivann12');
+tri1 = tri1.geometry();
+/**var naples = ee.FeatureCollection('users/MeghaShrestha/naples1');
+naples = naples.geometry();
+
+
+
+Map.addLayer(tri, {}, 'tri');
+
+var las = ee.FeatureCollection('users/MeghaShrestha/lasveagas');
+las = las.geometry();
+
+var atlanta = ee.FeatureCollection('users/MeghaShrestha/atlanta');
+atlanta = atlanta.geometry();**/
+// Apply the bounds method to the Geometry object.
+//var geometryBounds = geometry4.bounds();
+                  
+/** to clip the images to the geometry ***/
+
+dataset = dataset.map(function(img){return img.clip(tri1)});
+dataset1 = dataset1.map(function(img){return img.clip(tri1)});
+
+var composite = dataset.median(); 
+var composite1 = dataset1.median(); 
+
+var visParams = {
+  bands: ['B4', 'B3', 'B2'],
+  min: 0,
+  max: 3000,
+  gamma: 1.4,
+};
+Map.setCenter(-81.88, 26.0755, 8);
+
+var ndvi = composite.normalizedDifference(['B4', 'B3']).rename(['ndvi']);
+//var ndviParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};
+//Map.addLayer(ndvi, ndviParams, 'NDVI image');
+var ndvi1 = composite1.normalizedDifference(['B5', 'B4']).rename(['ndvi']);
+
+var fndvi = ee.ImageCollection([ndvi, ndvi1]).mosaic();
+
+//Map.addLayer(fndvi, {}, 'Visualization mosaic');
+
+Export.image.toDrive({
+  image: fndvi,
+  description: 'tri20112021i123',
+  folder: 'LULC',
+  region: tri1,
+  scale: 30,
+  crs: 'EPSG:3395'
+});
